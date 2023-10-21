@@ -31,34 +31,41 @@ func main() {
 	pixelBuf := make([]color.RGBA, 10)
 	pixels.WriteColors(pixelBuf)
 
-	ledTicker := time.NewTicker(512 * time.Millisecond)
+	heartbeatTicker := time.NewTicker(512 * time.Millisecond)
 	hueTicker := time.NewTicker(40 * time.Millisecond)
 	frameTicker := time.NewTicker(30 * time.Millisecond)
 
+	ledState := false
+	toggleHeartbeatLED := func() {
+		if ledState = !ledState; ledState {
+			led.High()
+		} else {
+			led.Low()
+		}
+	}
+
+	updatePixels := func(hue int) {
+		fillRainbow(pixelBuf, hue, 36)
+		pixels.WriteColors(pixelBuf)
+	}
+
 	go func() {
 		hue := 0
-		ledState := false
 		for {
 			select {
 			case <-hueTicker.C:
 				hue = (hue + 1) % 360
-			case <-ledTicker.C:
-				ledState = !ledState
-				if ledState {
-					led.High()
-				} else {
-					led.Low()
-				}
+			case <-heartbeatTicker.C:
+				toggleHeartbeatLED()
 			case <-frameTicker.C:
-				fillRainbow(pixelBuf, hue, 36)
-				pixels.WriteColors(pixelBuf)
+				updatePixels(hue)
 			default:
-				time.Sleep(1 * time.Millisecond)
+				runtime.Gosched()
 			}
 		}
 	}()
 
 	for {
-		runtime.Gosched()
+		time.Sleep(1 * time.Second)
 	}
 }
