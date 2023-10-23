@@ -9,55 +9,87 @@ import (
 	"tinygo.org/x/drivers/ws2812"
 )
 
-var saturation int = 100
-var brightness int = 2
+const saturation = 100
+const brightness = 2
 
-func HSV2RGB(h, s, v int) (int, int, int) {
-	var f, p, q, t, r, g, b, hf, sf, vf float64
-	var i int
-	hf = float64(h) / 360
-	sf = float64(s) / 100
-	vf = float64(v) / 100
+func scale(value, scale uint8) uint8 {
+	return uint8((uint16(value) * uint16(1+scale)) >> 8)
+}
 
-	i = int(hf * 6)
-	f = hf*6 - float64(i)
-	p = vf * (1 - sf)
-	q = vf * (1 - f*sf)
-	t = vf * (1 - (1-f)*sf)
-	switch i % 6 {
-	case 0:
-		r = vf
-		g = t
-		b = p
-	case 1:
-		r = q
-		g = vf
-		b = p
-	case 2:
-		r = p
-		g = vf
-		b = t
-	case 3:
-		r = p
-		g = q
-		b = vf
-	case 4:
-		r = t
-		g = p
-		b = vf
-	case 5:
-		r = vf
-		g = p
-		b = q
+func HSV2RGB(h, s, v uint8) (r, g, b uint8) {
+	// Adapted from FastLED:src/hsv2rgb.cpp
+	const K255 = 255
+	const K171 = 171
+	const K170 = 170
+	const K85 = 85
+
+	offset := uint8(h & 0x1F)
+	offset8 := offset << 3         // offset8 = offset * 8
+	third := scale(offset8, 256/3) // max = 85
+
+	if h&0x80 == 0 {
+		// 0XX
+		if h&0x40 == 0 {
+			// 00X
+			//section 0-1
+			if h&0x20 == 0 {
+				// 000
+				//case 0: // R -> O
+				r, g, b = K255-third, third, 0
+			} else {
+				// 001
+				//case 1: // O -> Y
+				r, g, b = K171, K85+third, 0
+			}
+		} else {
+			//01X
+			// section 2-3
+			if h&0x20 == 0 {
+				// 010
+				//case 2: // Y -> G
+				twothirds := scale(offset8, ((256 * 2) / 3)) // max=170
+				r, g, b = K171-twothirds, K170+third, 0
+			} else {
+				// 011
+				// case 3: // G -> A
+				r, g, b = 0, K255-third, third
+			}
+		}
+	} else {
+		// section 4-7
+		// 1XX
+		if h&0x40 == 0 {
+			// 10X
+			if h&0x20 == 0 {
+				// 100
+				//case 4: // A -> B
+				twothirds := scale(offset8, ((256 * 2) / 3)) // max=170
+				r, g, b = 0, K171-twothirds, K85+twothirds
+			} else {
+				// 101
+				//case 5: // B -> P
+				r, g, b = third, 0, K255-third
+			}
+		} else {
+			if h&0x20 == 0 {
+				// 110
+				//case 6: // P -- K
+				r, g, b = K85+third, 0, K171-third
+			} else {
+				// 111
+				//case 7: // K -> R
+				r, g, b = K170+third, 0, K85-third
+			}
+		}
 	}
-	return int(r * 255), int(g * 255), int(b * 255)
+	return
 }
 
 func fillRainbow(pixels []color.RGBA, offset, step int) {
 	for i := 0; i < len(pixels); i++ {
-		hue := (offset + step*i) % 360
+		hue := uint8((offset + step*i) % 256)
 		r, g, b := HSV2RGB(hue, saturation, brightness)
-		pixels[i] = color.RGBA{uint8(r), uint8(g), uint8(b), 255}
+		pixels[i] = color.RGBA{r, g, b, 255}
 	}
 }
 
