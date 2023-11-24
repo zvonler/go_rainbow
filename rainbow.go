@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image/color"
 	"machine"
 	"runtime"
@@ -9,11 +10,19 @@ import (
 	"tinygo.org/x/drivers/ws2812"
 )
 
-const saturation = 100
-const brightness = 2
+const saturation = 255
+const brightness = 10
 
 func scale(value, scale uint8) uint8 {
-	return uint8((uint16(value) * uint16(1+scale)) >> 8)
+	return uint8((uint16(value) * uint16(scale)) >> 8)
+}
+
+func scale_video(value, scale uint8) uint8 {
+	var nonzero uint8
+	if scale != 0 && scale != 255 {
+		nonzero = 1
+	}
+	return uint8((uint16(value)*uint16(scale))>>8) + nonzero
 }
 
 func HSV2RGB(h, s, v uint8) (r, g, b uint8) {
@@ -83,6 +92,40 @@ func HSV2RGB(h, s, v uint8) (r, g, b uint8) {
 		}
 	}
 	return
+	// Scale down colors if saturation less than full
+	if s != 255 {
+		if s == 0 {
+			r, g, b = 255, 255, 255
+		} else {
+			desat := 255 - s
+			desat = scale_video(desat, desat)
+			satscale := 255 - desat
+			if r > 0 {
+				r = scale(r, satscale)
+			}
+			if g > 0 {
+				g = scale(g, satscale)
+			}
+			if b > 0 {
+				b = scale(b, satscale)
+			}
+			r += desat
+			g += desat
+			b += desat
+		}
+	}
+
+	// Scale down colors if brightness less than full
+	if v != 255 {
+		//v = scale_video(v, v)
+		if v == 0 {
+			r, g, b = 0, 0, 0
+		} else {
+			r, g, b = scale(r, v)+1, scale(g, v)+1, scale(b, v)+1
+		}
+	}
+
+	return
 }
 
 func fillRainbow(pixels []color.RGBA, offset, step int) {
@@ -90,6 +133,10 @@ func fillRainbow(pixels []color.RGBA, offset, step int) {
 		hue := uint8((offset + step*i) % 256)
 		r, g, b := HSV2RGB(hue, saturation, brightness)
 		pixels[i] = color.RGBA{r, g, b, 255}
+
+		if i == 0 {
+			fmt.Printf("blue:%v, red:%v, green:%v\n", b, r, g)
+		}
 	}
 }
 
@@ -105,7 +152,7 @@ func main() {
 
 	heartbeatTicker := time.NewTicker(512 * time.Millisecond)
 	hueTicker := time.NewTicker(40 * time.Millisecond)
-	frameTicker := time.NewTicker(1 * time.Millisecond)
+	frameTicker := time.NewTicker(8 * time.Millisecond)
 
 	ledState := false
 	toggleHeartbeatLED := func() {
@@ -117,7 +164,7 @@ func main() {
 	}
 
 	updatePixels := func(hue int) {
-		fillRainbow(pixelBuf, hue, 36)
+		fillRainbow(pixelBuf, hue, 25)
 		pixels.WriteColors(pixelBuf)
 	}
 
@@ -126,7 +173,7 @@ func main() {
 		for {
 			select {
 			case <-hueTicker.C:
-				hue = (hue + 1) % 360
+				hue = (hue + 1) % 256
 			case <-heartbeatTicker.C:
 				toggleHeartbeatLED()
 			case <-frameTicker.C:
